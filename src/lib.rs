@@ -6,6 +6,11 @@ const CLAUDE_CODE_SYSTEM_PROMPT: &str =
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    if !req.path().starts_with("/v1") {
+        let resp = Response::from_json(&json!({"msg": "not found"}))?;
+        return Ok(resp.with_status(404));
+    }
+
     let upstream_url = env.var("UPSTREAM_URL")?.to_string();
     console_log!("[{}] {} {}", req.method(), req.path(), upstream_url);
     match proxy_request(req, &upstream_url).await {

@@ -1,0 +1,20 @@
+[package]
+name = "anyrouter-worker"
+version = "0.1.0"
+edition = "2021"
+authors = ["Me0wo <public@me0wo.cc>"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = { version = "0.7" }
+worker-macros = { version = "0.7" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"

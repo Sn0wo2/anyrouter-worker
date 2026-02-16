@@ -22,3 +22,6 @@ target
 
 node_modules
 .wrangler
+
+# Windows
+nul

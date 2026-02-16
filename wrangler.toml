@@ -21,4 +21,4 @@ head_sampling_rate = 1
 UPSTREAM_URL = "https://anyrouter.top"
 
 [build]
-command = "cargo install -q worker-build@0.7.4 && worker-build --release"
+command = "cargo install -q worker-build && worker-build --release"

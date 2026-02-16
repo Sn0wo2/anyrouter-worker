@@ -65,6 +65,20 @@ fn inject_system_prompt(body: &[u8]) -> Vec<u8> {
         Err(_) => return body.to_vec(),
     };
 
+    let already_has_prompt = match json.get("system") {
+        Some(Value::Array(arr)) => {
+            arr.first().and_then(|v| v.get("text")).and_then(|t| t.as_str())
+                .map(|text| text == CLAUDE_CODE_SYSTEM_PROMPT)
+                .unwrap_or(false)
+        }
+        Some(Value::String(s)) => s == CLAUDE_CODE_SYSTEM_PROMPT,
+        _ => false,
+    };
+
+    if already_has_prompt {
+        return body.to_vec();
+    }
+
     let prompt_entry = json!({
         "type": "text",
         "text": CLAUDE_CODE_SYSTEM_PROMPT

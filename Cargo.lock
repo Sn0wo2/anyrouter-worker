@@ -4,12 +4,10 @@ version = 4
 
 [[package]]
 name = "anyrouter-worker"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
- "serde",
  "serde_json",
  "worker",
- "worker-macros",
 ]
 
 [[package]]

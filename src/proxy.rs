@@ -1,12 +1,16 @@
-use serde_json::{json, Value};
+use serde_json::json;
 use worker::*;
 
-const CLAUDE_CODE_SYSTEM_PROMPT: &str =
-    "You are Claude Code, Anthropic's official CLI for Claude.";
+mod constants;
+mod payload;
+mod proxy_core;
+
+use payload::patch_request_body;
+use proxy_core::{build_upstream_url, is_proxy_path, should_forward_header, should_have_body};
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    if !req.path().starts_with("/v1") {
+    if !is_proxy_path(&req.path()) {
         let resp = Response::from_json(&json!({"msg": "not found"}))?;
         return Ok(resp.with_status(404));
     }
@@ -27,18 +31,14 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
 async fn proxy_request(mut req: Request, upstream_url: &str) -> Result<Response> {
     let url = req.url()?;
-    let upstream = match url.query() {
-        Some(q) => format!("{}{}?{}", upstream_url, url.path(), q),
-        None => format!("{}{}", upstream_url, url.path()),
-    };
+    let upstream = build_upstream_url(upstream_url, url.path(), url.query());
 
     let method = req.method();
-    let has_body = method == Method::Post || method == Method::Put || method == Method::Patch;
+    let has_body = should_have_body(method.as_ref());
 
     let headers = Headers::new();
     for (name, value) in req.headers() {
-        let lower = name.to_lowercase();
-        if lower == "host" || lower == "connection" {
+        if !should_forward_header(&name) {
             continue;
         }
         headers.set(&name, &value)?;
@@ -49,53 +49,16 @@ async fn proxy_request(mut req: Request, upstream_url: &str) -> Result<Response>
 
     if has_body {
         let body_bytes = req.bytes().await?;
-        console_log!("request body size: {} bytes", body_bytes.len());
-        let modified_body = inject_system_prompt(&body_bytes);
-        console_log!("modified body size: {} bytes", modified_body.len());
+        // console_log!("=== ORIGINAL BODY ===");
+        // console_log!("{}", String::from_utf8_lossy(&body_bytes));
+
+        let modified_body = patch_request_body(&body_bytes);
+        // console_log!("=== MODIFIED BODY ===");
+        // console_log!("{}", String::from_utf8_lossy(&modified_body));
+
         init.with_body(Some(modified_body.into()));
     }
 
     let proxy_req = Request::new_with_init(&upstream, &init)?;
     Fetch::Request(proxy_req).send().await
-}
-
-fn inject_system_prompt(body: &[u8]) -> Vec<u8> {
-    let mut json: Value = match serde_json::from_slice(body) {
-        Ok(v) => v,
-        Err(_) => return body.to_vec(),
-    };
-
-    let already_has_prompt = match json.get("system") {
-        Some(Value::Array(arr)) => {
-            arr.first().and_then(|v| v.get("text")).and_then(|t| t.as_str())
-                .map(|text| text == CLAUDE_CODE_SYSTEM_PROMPT)
-                .unwrap_or(false)
-        }
-        Some(Value::String(s)) => s == CLAUDE_CODE_SYSTEM_PROMPT,
-        _ => false,
-    };
-
-    if already_has_prompt {
-        return body.to_vec();
-    }
-
-    let prompt_entry = json!({
-        "type": "text",
-        "text": CLAUDE_CODE_SYSTEM_PROMPT
-    });
-
-    let new_system = match json.get("system") {
-        Some(Value::Array(arr)) => {
-            let mut merged = vec![prompt_entry];
-            merged.extend(arr.iter().cloned());
-            Value::Array(merged)
-        }
-        _ => {
-            Value::Array(vec![prompt_entry])
-        }
-    };
-
-    json["system"] = new_system;
-
-    serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec())
 }
